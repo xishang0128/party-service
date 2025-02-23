@@ -11,6 +11,11 @@ import (
 	"github.com/go-chi/render"
 )
 
+var (
+	ErrBadRequest   = render.M{"error": "Bad request"}
+	ErrUnauthorized = render.M{"error": "Unauthorized"}
+)
+
 func router() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(render.SetContentType(render.ContentTypeJSON))
@@ -42,7 +47,7 @@ func auth() func(http.Handler) http.Handler {
 
 			if bearer != "Bearer" || !found || !strings.EqualFold(token, secret) {
 				render.Status(r, http.StatusUnauthorized)
-				render.JSON(w, r, render.M{"error": "Unauthorized"})
+				render.JSON(w, r, ErrUnauthorized)
 				return
 			}
 			next.ServeHTTP(w, r)

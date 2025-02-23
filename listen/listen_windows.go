@@ -6,7 +6,7 @@ import (
 	"net"
 	"os"
 
-	"party-service/namedpipe"
+	"party-service/listen/namedpipe"
 
 	"golang.org/x/sys/windows"
 )
