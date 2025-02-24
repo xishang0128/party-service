@@ -73,17 +73,16 @@ func DisableProxy() error {
 
 func SetProxy(proxy, bypass string) error {
 	if proxy == "" || bypass == "" {
-		settings, err := QueryProxySettings()
+		config, err := QueryProxySettings()
 		if err != nil {
 			return err
 		}
 
-		proxySettings := settings["proxy"].(map[string]any)
 		if proxy == "" {
-			proxy = proxySettings["server"].(string)
+			proxy = config.Proxy.Servers["http_server"]
 		}
 		if bypass == "" {
-			bypass = proxySettings["bypass"].(string)
+			bypass = config.Proxy.Bypass
 		}
 	}
 	proxyPtr, err := syscall.UTF16PtrFromString(proxy)
@@ -119,7 +118,7 @@ func SetPac(pacUrl string) error {
 	})
 }
 
-func QueryProxySettings() (map[string]any, error) {
+func QueryProxySettings() (*ProxyConfig, error) {
 	options := [4]InternetPerConnOption{
 		{dwOption: INTERNET_PER_CONN_FLAGS},
 		{dwOption: INTERNET_PER_CONN_PROXY_SERVER},
@@ -142,20 +141,17 @@ func QueryProxySettings() (map[string]any, error) {
 	}
 
 	flags := uint32(options[0].dwValue)
-	result := map[string]any{
-		"flags": flags,
-		"proxy": map[string]any{
-			"enable": (flags & PROXY_TYPE_PROXY) != 0,
-			"server": getString(options[1].dwValue),
-			"bypass": getString(options[2].dwValue),
-		},
-		"pac": map[string]any{
-			"enable": (flags & PROXY_TYPE_AUTO_PROXY_URL) != 0,
-			"url":    getString(options[3].dwValue),
-		},
-	}
+	config := &ProxyConfig{}
 
-	return result, nil
+	config.Proxy.Enable = (flags & PROXY_TYPE_PROXY) != 0
+	config.Proxy.Servers = map[string]string{
+		"http_server": getString(options[1].dwValue),
+	}
+	config.Proxy.Bypass = getString(options[2].dwValue)
+	config.PAC.Enable = (flags & PROXY_TYPE_AUTO_PROXY_URL) != 0
+	config.PAC.URL = getString(options[3].dwValue)
+
+	return config, nil
 }
 
 func getString(val uintptr) string {
