@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 type Environment struct {
@@ -135,6 +136,20 @@ func QueryProxySettings() (*ProxyConfig, error) {
 	}
 }
 
+func execAsCurrentUser(name string, arg ...string) *exec.Cmd {
+	cmd := exec.Command(name, arg...)
+	if os.Geteuid() == 0 {
+		fmt.Println(os.Getuid(), os.Getgid())
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Credential: &syscall.Credential{
+				Uid: uint32(os.Getuid()),
+				Gid: uint32(os.Getgid()),
+			},
+		}
+	}
+	return cmd
+}
+
 func cleanOutput(s string) string {
 	s = strings.Trim(s, "'[]\" \n")
 	return strings.TrimSpace(s)
@@ -190,7 +205,7 @@ func queryGnomeSettings() (*ProxyConfig, error) {
 	}
 
 	for _, key := range keys {
-		output, err := exec.Command("gsettings", append([]string{"get"}, strings.Split(key.path, " ")...)...).Output()
+		output, err := execAsCurrentUser("gsettings", append([]string{"get"}, strings.Split(key.path, " ")...)...).Output()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read GNOME config for %s: %v", key.name, err)
 		}
@@ -268,7 +283,7 @@ func clearGnomeProxy() error {
 }
 
 func execGsettings(schema, key, value string) error {
-	return exec.Command("gsettings", "set", schema, key, value).Run()
+	return execAsCurrentUser("gsettings", "set", schema, key, value).Run()
 }
 
 func queryKDESettings(isKde6 bool) (*ProxyConfig, error) {
@@ -294,7 +309,7 @@ func queryKDESettings(isKde6 bool) (*ProxyConfig, error) {
 	}
 
 	for key := range keys {
-		output, err := exec.Command(cmd, "--file", "kioslaverc", "--group", group, "--key", key).Output()
+		output, err := execAsCurrentUser(cmd, "--file", "kioslaverc", "--group", group, "--key", key).Output()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read KDE config for %s: %v", key, err)
 		}
@@ -305,10 +320,10 @@ func queryKDESettings(isKde6 bool) (*ProxyConfig, error) {
 	config.Proxy.Enable = keys["ProxyType"] == "1"
 	config.Proxy.SameForAll = keys["UseSameProxy"] == "true"
 	config.Proxy.Servers = map[string]string{
-		"http_server":  keys["httpProxy"],
-		"https_server": keys["httpsProxy"],
-		"socks_server": keys["socksProxy"],
-		"ftp_server":   keys["ftpProxy"],
+		"http_server":  strings.ReplaceAll(keys["httpProxy"], " ", ":"),
+		"https_server": strings.ReplaceAll(keys["httpsProxy"], " ", ":"),
+		"socks_server": strings.ReplaceAll(keys["socksProxy"], " ", ":"),
+		"ftp_server":   strings.ReplaceAll(keys["ftpProxy"], " ", ":"),
 	}
 
 	for key, value := range config.Proxy.Servers {
@@ -397,5 +412,5 @@ func clearKDEProxy(isKde6 bool) error {
 
 func execKDEConfig(cmd, key, value, group string) error {
 	args := []string{"--file", "kioslaverc", "--group", group, "--key", key, value}
-	return exec.Command(cmd, args...).Run()
+	return execAsCurrentUser(cmd, args...).Run()
 }
