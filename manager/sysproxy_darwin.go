@@ -2,20 +2,189 @@
 
 package manager
 
-import "fmt"
+import (
+	"fmt"
+	"os/exec"
+	"strings"
+)
 
 func DisableProxy() error {
-	return fmt.Errorf("不支持的操作系统")
+	services, err := getNetworkServices()
+	if err != nil {
+		return err
+	}
+
+	for _, service := range services {
+		if err := execNetworksetup("-setautoproxystate", service, "off"); err != nil {
+			return err
+		}
+		if err := execNetworksetup("-setproxyautodiscovery", service, "off"); err != nil {
+			return err
+		}
+		if err := execNetworksetup("-setwebproxystate", service, "off"); err != nil {
+			return err
+		}
+		if err := execNetworksetup("-setsecurewebproxystate", service, "off"); err != nil {
+			return err
+		}
+		if err := execNetworksetup("-setsocksfirewallproxystate", service, "off"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func SetProxy(proxy, bypass string) error {
-	return fmt.Errorf("不支持的操作系统")
+	if proxy == "" || bypass == "" {
+		config, err := QueryProxySettings()
+		if err != nil {
+			return err
+		}
+
+		if proxy == "" {
+			proxy = config.Proxy.Servers["http_server"]
+		}
+		if bypass == "" {
+			bypass = config.Proxy.Bypass
+		}
+	}
+
+	addr := ParseServerString(proxy)
+	if addr.host == "" || addr.port == "" {
+		return fmt.Errorf("invalid proxy address: %s", proxy)
+	}
+
+	services, err := getNetworkServices()
+	if err != nil {
+		return err
+	}
+
+	for _, service := range services {
+		if err := execNetworksetup("-setautoproxystate", service, "off"); err != nil {
+			return err
+		}
+		if err := execNetworksetup("-setproxyautodiscovery", service, "off"); err != nil {
+			return err
+		}
+
+		if err := execNetworksetup("-setwebproxy", service, addr.host, addr.port); err != nil {
+			return err
+		}
+		if err := execNetworksetup("-setsecurewebproxy", service, addr.host, addr.port); err != nil {
+			return err
+		}
+		if err := execNetworksetup("-setsocksfirewallproxy", service, addr.host, addr.port); err != nil {
+			return err
+		}
+		if err := execNetworksetup("-setproxybypassdomains", service, bypass); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func SetPac(server string) error {
-	return fmt.Errorf("不支持的操作系统")
+func SetPac(pacUrl string) error {
+	if pacUrl == "" {
+		config, err := QueryProxySettings()
+		if err != nil {
+			return err
+		}
+		pacUrl = config.PAC.URL
+	}
+
+	services, err := getNetworkServices()
+	if err != nil {
+		return err
+	}
+
+	for _, service := range services {
+		if err := execNetworksetup("-setwebproxystate", service, "off"); err != nil {
+			return err
+		}
+		if err := execNetworksetup("-setsecurewebproxystate", service, "off"); err != nil {
+			return err
+		}
+		if err := execNetworksetup("-setsocksfirewallproxystate", service, "off"); err != nil {
+			return err
+		}
+
+		if err := execNetworksetup("-setautoproxyurl", service, pacUrl); err != nil {
+			return err
+		}
+		if err := execNetworksetup("-setautoproxystate", service, "on"); err != nil {
+			return err
+		}
+		if err := execNetworksetup("-setproxyautodiscovery", service, "on"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func QueryProxySettings() (map[string]any, error) {
-	return nil, fmt.Errorf("不支持的操作系统")
+func QueryProxySettings() (*ProxyConfig, error) {
+	services, err := getNetworkServices()
+	if err != nil {
+		return nil, err
+	}
+
+	service := services[0]
+	config := &ProxyConfig{}
+
+	output, err := exec.Command("networksetup", "-getautoproxyurl", service).Output()
+	if err == nil && strings.Contains(string(output), "Enabled: Yes") {
+		config.PAC.Enable = true
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "URL: ") {
+				config.PAC.URL = strings.TrimPrefix(line, "URL: ")
+				break
+			}
+		}
+	}
+
+	output, err = exec.Command("networksetup", "-getwebproxy", service).Output()
+	if err == nil && strings.Contains(string(output), "Enabled: Yes") {
+		config.Proxy.Enable = true
+		lines := strings.Split(string(output), "\n")
+		if config.Proxy.Servers == nil {
+			config.Proxy.Servers = make(map[string]string)
+		}
+		var host, port string
+		for _, line := range lines {
+			if strings.HasPrefix(line, "Server: ") {
+				host = strings.TrimPrefix(line, "Server: ")
+			} else if strings.HasPrefix(line, "Port: ") {
+				port = strings.TrimPrefix(line, "Port: ")
+			}
+		}
+		config.Proxy.Servers["http_server"] = FormatServer(host, port)
+	}
+
+	output, err = exec.Command("networksetup", "-getproxybypassdomains", service).Output()
+	if err == nil {
+		config.Proxy.Bypass = strings.TrimSpace(string(output))
+	}
+
+	return config, nil
+}
+
+func getNetworkServices() ([]string, error) {
+	output, err := exec.Command("networksetup", "-listnetworkserviceorder").Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var services []string
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "(") {
+			service := strings.TrimSpace(strings.Split(line, ")")[1])
+			services = append(services, service)
+		}
+	}
+	return services, nil
+}
+
+func execNetworksetup(args ...string) error {
+	return exec.Command("networksetup", args...).Run()
 }

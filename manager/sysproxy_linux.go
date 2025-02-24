@@ -150,41 +150,6 @@ func execAsCurrentUser(name string, arg ...string) *exec.Cmd {
 	return cmd
 }
 
-func cleanOutput(s string) string {
-	s = strings.Trim(s, "'[]\" \n")
-	return strings.TrimSpace(s)
-}
-
-func formatServer(host, port string) string {
-	host = cleanOutput(host)
-	port = cleanOutput(port)
-
-	if host == "" || port == "" || port == "0" {
-		return ""
-	}
-
-	return fmt.Sprintf("%s:%s", host, port)
-}
-
-type serverAddr struct {
-	host string
-	port string
-}
-
-func parseServerString(server string) serverAddr {
-	if server == "" {
-		return serverAddr{}
-	}
-	lastIndex := strings.LastIndex(server, ":")
-	if lastIndex == -1 {
-		return serverAddr{}
-	}
-	return serverAddr{
-		host: server[:lastIndex],
-		port: server[lastIndex+1:],
-	}
-}
-
 func queryGnomeSettings() (*ProxyConfig, error) {
 	settings := map[string]string{}
 	keys := []struct {
@@ -216,10 +181,10 @@ func queryGnomeSettings() (*ProxyConfig, error) {
 	config.Proxy.Enable = cleanOutput(settings["mode"]) == "manual"
 	config.Proxy.SameForAll = cleanOutput(settings["use-same-proxy"]) == "true"
 	config.Proxy.Servers = map[string]string{
-		"http_server":  formatServer(settings["http_host"], settings["http_port"]),
-		"https_server": formatServer(settings["https_host"], settings["https_port"]),
-		"socks_server": formatServer(settings["socks_host"], settings["socks_port"]),
-		"ftp_server":   formatServer(settings["ftp_host"], settings["ftp_port"]),
+		"http_server":  FormatServer(settings["http_host"], settings["http_port"]),
+		"https_server": FormatServer(settings["https_host"], settings["https_port"]),
+		"socks_server": FormatServer(settings["socks_host"], settings["socks_port"]),
+		"ftp_server":   FormatServer(settings["ftp_host"], settings["ftp_port"]),
 	}
 
 	bypassList := cleanOutput(settings["ignore-hosts"])
@@ -243,10 +208,10 @@ func setGnomeProxy(config *ProxyConfig) error {
 	}
 
 	proxyTypes := map[string]struct{ host, port string }{
-		"http":  parseServerString(config.Proxy.Servers["http_server"]),
-		"https": parseServerString(config.Proxy.Servers["https_server"]),
-		"ftp":   parseServerString(config.Proxy.Servers["ftp_server"]),
-		"socks": parseServerString(config.Proxy.Servers["socks_server"]),
+		"http":  ParseServerString(config.Proxy.Servers["http_server"]),
+		"https": ParseServerString(config.Proxy.Servers["https_server"]),
+		"ftp":   ParseServerString(config.Proxy.Servers["ftp_server"]),
+		"socks": ParseServerString(config.Proxy.Servers["socks_server"]),
 	}
 
 	for proxyType, addr := range proxyTypes {
