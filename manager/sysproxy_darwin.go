@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
 func DisableProxy() error {
@@ -14,20 +15,34 @@ func DisableProxy() error {
 		return err
 	}
 
+	commands := [][]string{
+		{"-setautoproxystate", "off"},
+		{"-setproxyautodiscovery", "off"},
+		{"-setwebproxystate", "off"},
+		{"-setsecurewebproxystate", "off"},
+		{"-setsocksfirewallproxystate", "off"},
+	}
+
+	errChan := make(chan error, len(services))
+	var wg sync.WaitGroup
+
 	for _, service := range services {
-		if err := execNetworksetup("-setautoproxystate", service, "off"); err != nil {
-			return err
-		}
-		if err := execNetworksetup("-setproxyautodiscovery", service, "off"); err != nil {
-			return err
-		}
-		if err := execNetworksetup("-setwebproxystate", service, "off"); err != nil {
-			return err
-		}
-		if err := execNetworksetup("-setsecurewebproxystate", service, "off"); err != nil {
-			return err
-		}
-		if err := execNetworksetup("-setsocksfirewallproxystate", service, "off"); err != nil {
+		wg.Add(1)
+		go func(svc string) {
+			defer wg.Done()
+			if err := execNetworksetupConcurrent(svc, commands); err != nil {
+				errChan <- err
+			}
+		}(service)
+	}
+
+	go func() {
+		wg.Wait()
+		close(errChan)
+	}()
+
+	for err := range errChan {
+		if err != nil {
 			return err
 		}
 	}
@@ -59,24 +74,35 @@ func SetProxy(proxy, bypass string) error {
 		return err
 	}
 
-	for _, service := range services {
-		if err := execNetworksetup("-setautoproxystate", service, "off"); err != nil {
-			return err
-		}
-		if err := execNetworksetup("-setproxyautodiscovery", service, "off"); err != nil {
-			return err
-		}
+	commands := [][]string{
+		{"-setautoproxystate", "off"},
+		{"-setproxyautodiscovery", "off"},
+		{"-setwebproxy", addr.host, addr.port},
+		{"-setsecurewebproxy", addr.host, addr.port},
+		{"-setsocksfirewallproxy", addr.host, addr.port},
+		{"-setproxybypassdomains", bypass},
+	}
 
-		if err := execNetworksetup("-setwebproxy", service, addr.host, addr.port); err != nil {
-			return err
-		}
-		if err := execNetworksetup("-setsecurewebproxy", service, addr.host, addr.port); err != nil {
-			return err
-		}
-		if err := execNetworksetup("-setsocksfirewallproxy", service, addr.host, addr.port); err != nil {
-			return err
-		}
-		if err := execNetworksetup("-setproxybypassdomains", service, bypass); err != nil {
+	errChan := make(chan error, len(services))
+	var wg sync.WaitGroup
+
+	for _, service := range services {
+		wg.Add(1)
+		go func(svc string) {
+			defer wg.Done()
+			if err := execNetworksetupConcurrent(svc, commands); err != nil {
+				errChan <- err
+			}
+		}(service)
+	}
+
+	go func() {
+		wg.Wait()
+		close(errChan)
+	}()
+
+	for err := range errChan {
+		if err != nil {
 			return err
 		}
 	}
@@ -97,24 +123,35 @@ func SetPac(pacUrl string) error {
 		return err
 	}
 
-	for _, service := range services {
-		if err := execNetworksetup("-setwebproxystate", service, "off"); err != nil {
-			return err
-		}
-		if err := execNetworksetup("-setsecurewebproxystate", service, "off"); err != nil {
-			return err
-		}
-		if err := execNetworksetup("-setsocksfirewallproxystate", service, "off"); err != nil {
-			return err
-		}
+	commands := [][]string{
+		{"-setwebproxystate", "off"},
+		{"-setsecurewebproxystate", "off"},
+		{"-setsocksfirewallproxystate", "off"},
+		{"-setautoproxyurl", pacUrl},
+		{"-setautoproxystate", "on"},
+		{"-setproxyautodiscovery", "on"},
+	}
 
-		if err := execNetworksetup("-setautoproxyurl", service, pacUrl); err != nil {
-			return err
-		}
-		if err := execNetworksetup("-setautoproxystate", service, "on"); err != nil {
-			return err
-		}
-		if err := execNetworksetup("-setproxyautodiscovery", service, "on"); err != nil {
+	errChan := make(chan error, len(services))
+	var wg sync.WaitGroup
+
+	for _, service := range services {
+		wg.Add(1)
+		go func(svc string) {
+			defer wg.Done()
+			if err := execNetworksetupConcurrent(svc, commands); err != nil {
+				errChan <- err
+			}
+		}(service)
+	}
+
+	go func() {
+		wg.Wait()
+		close(errChan)
+	}()
+
+	for err := range errChan {
+		if err != nil {
 			return err
 		}
 	}
@@ -171,20 +208,63 @@ func QueryProxySettings() (*ProxyConfig, error) {
 func getNetworkServices() ([]string, error) {
 	output, err := exec.Command("networksetup", "-listnetworkserviceorder").Output()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to execute networksetup command: %w", err)
+	}
+
+	if len(output) == 0 {
+		return nil, fmt.Errorf("no output from networksetup command")
 	}
 
 	var services []string
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+
 		if strings.HasPrefix(line, "(") {
-			service := strings.TrimSpace(strings.Split(line, ")")[1])
-			services = append(services, service)
+			parts := strings.Split(line, ")")
+			if len(parts) < 2 {
+				continue
+			}
+			service := strings.TrimSpace(parts[1])
+			if service != "" {
+				services = append(services, service)
+			}
 		}
 	}
+
+	if len(services) == 0 {
+		return nil, fmt.Errorf("no network services found")
+	}
+
 	return services, nil
 }
 
-func execNetworksetup(args ...string) error {
-	return exec.Command("networksetup", args...).Run()
+func execNetworksetupConcurrent(service string, commands [][]string) error {
+	errChan := make(chan error, len(commands))
+	var wg sync.WaitGroup
+
+	for _, cmd := range commands {
+		wg.Add(1)
+		go func(args []string) {
+			defer wg.Done()
+			if err := exec.Command("networksetup", args...).Run(); err != nil {
+				errChan <- fmt.Errorf("error executing networksetup %v for service %s: %w", args, service, err)
+			}
+		}(append([]string{cmd[0]}, append([]string{service}, cmd[1:]...)...))
+	}
+
+	go func() {
+		wg.Wait()
+		close(errChan)
+	}()
+
+	for err := range errChan {
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
