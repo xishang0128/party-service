@@ -6,7 +6,7 @@ import (
 	"net"
 	"os"
 
-	"party-service/listen/namedpipe"
+	"sparkle-service/listen/namedpipe"
 
 	"golang.org/x/sys/windows"
 )

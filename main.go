@@ -3,20 +3,20 @@ package main
 import (
 	"log"
 
-	"party-service/route"
-	"party-service/service"
+	"sparkle-service/route"
+	"sparkle-service/service"
 
 	"github.com/spf13/cobra"
 )
 
-var dataFile string
+var configFile string
 
 var mainCmd = &cobra.Command{
-	Use: "party-service",
+	Use: "sparkle-service",
 }
 
 func init() {
-	mainCmd.PersistentFlags().StringVarP(&dataFile, "data", "d", "", "set data file path")
+	mainCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "set config file path")
 
 	mainCmd.AddCommand(route.ServerCmd)
 	mainCmd.AddCommand(service.ServiceCmd)

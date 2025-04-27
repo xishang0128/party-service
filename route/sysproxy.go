@@ -2,7 +2,7 @@ package route
 
 import (
 	"net/http"
-	"party-service/manager"
+	"sparkle-service/manager"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"

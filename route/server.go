@@ -7,11 +7,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 
-	"party-service/listen"
+	"sparkle-service/listen"
 )
 
 var (
@@ -21,18 +20,21 @@ var (
 )
 
 func start() error {
-	if runtime.GOOS == "windows" {
-		// if err = startServer("\\\\.\\pipe\\party-service", startPipe); err != nil {
-		// 	return err
-		// }
-		if err := startServer("./party-service.sock", StartUnix); err != nil {
-			return err
-		}
-	} else {
-		if err := startServer("/tmp/party-service.sock", StartUnix); err != nil {
-			return err
-		}
+	// if runtime.GOOS == "windows" {
+	// if err = startServer("\\\\.\\pipe\\party-service", startPipe); err != nil {
+	// 	return err
+	// }
+	// if err := startServer("./party-service.sock", StartUnix); err != nil {
+	// 	return err
+	// }
+	if err := startServer("127.0.0.1:10010", StartHTTP); err != nil {
+		return err
 	}
+	// } else {
+	// 	if err := startServer("/tmp/sparkle-service.sock", StartUnix); err != nil {
+	// 		return err
+	// 	}
+	// }
 	return nil
 }
 
@@ -71,6 +73,18 @@ func ensureDirExists(dir string) error {
 		}
 	}
 	return nil
+}
+
+func StartHTTP(addr string) error {
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("http listen error: %w", err)
+	}
+	log.Printf("http listening at: %s", addr)
+	server := &http.Server{
+		Handler: router(),
+	}
+	return server.Serve(l)
 }
 
 func StartUnix(addr string) error {

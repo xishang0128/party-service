@@ -56,7 +56,7 @@ func refreshAndApplySettings(options []InternetPerConnOption) error {
 		INTERNET_OPTION_PER_CONNECTION_OPTION,
 		uintptr(unsafe.Pointer(&list)),
 		unsafe.Sizeof(list)); ret == 0 {
-		return fmt.Errorf("set option failed: %v", err)
+		return fmt.Errorf("设置选项失败：%v", err)
 	}
 
 	procInternetSetOptionW.Call(0, INTERNET_OPTION_PROXY_SETTINGS_CHANGED, 0, 0)
@@ -137,7 +137,7 @@ func QueryProxySettings() (*ProxyConfig, error) {
 		INTERNET_OPTION_PER_CONNECTION_OPTION,
 		uintptr(unsafe.Pointer(&list)),
 		uintptr(unsafe.Pointer(&list.dwSize))); ret == 0 {
-		return nil, fmt.Errorf("query failed: %v", err)
+		return nil, fmt.Errorf("查询失败：%v", err)
 	}
 
 	flags := uint32(options[0].dwValue)

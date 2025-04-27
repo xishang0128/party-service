@@ -1,59 +1,87 @@
 package route
 
 import (
+	"io"
 	"net/http"
-
-	"party-service/manager"
+	"sparkle-service/manager"
+	"sync/atomic"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/render"
 )
 
+var (
+	cm     *manager.CoreManager
+	isInit atomic.Bool
+)
+
+type Response struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
 func coreManager() http.Handler {
+	if !isInit.Load() {
+		cm = manager.NewCoreManager()
+		isInit.Store(true)
+	}
+
 	r := chi.NewRouter()
+
+	r.Use(requestLogger)
+
 	r.Get("/", coreStatus)
 	r.Post("/start", coreStart)
 	r.Post("/stop", coreStop)
 	r.Post("/restart", coreRestart)
 	r.Post("/test", coreTest)
+
 	return r
 }
 
 func coreStatus(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("status"))
+	status, err := cm.GetProcessInfo()
+	if err != nil {
+		sendError(w, err)
+		return
+	}
+	render.JSON(w, r, status)
 }
 
 func coreStart(w http.ResponseWriter, r *http.Request) {
-	err := manager.StartCore()
-	if err != nil {
-		w.Write([]byte(err.Error()))
+	if err := cm.StartCore(); err != nil {
+		sendError(w, err)
 		return
 	}
-	w.Write([]byte("ok"))
+	sendJSON(w, "success", "核心启动成功")
 }
 
 func coreStop(w http.ResponseWriter, r *http.Request) {
-	err := manager.StopCore()
-	if err != nil {
-		w.Write([]byte(err.Error()))
+	if err := cm.StopCore(); err != nil {
+		sendError(w, err)
 		return
 	}
-	w.Write([]byte("ok"))
+	sendJSON(w, "success", "核心停止成功")
 }
 
 func coreRestart(w http.ResponseWriter, r *http.Request) {
-	err := manager.RestartCore()
-	if err != nil {
-		w.Write([]byte(err.Error()))
+	if err := cm.RestartCore(); err != nil {
+		sendError(w, err)
 		return
 	}
-	w.Write([]byte("ok"))
+	sendJSON(w, "success", "核心重启成功")
 }
 
 func coreTest(w http.ResponseWriter, r *http.Request) {
-	err := manager.ConfigTest()
+	defer r.Body.Close()
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		w.Write([]byte(err.Error()))
+		sendError(w, err)
 		return
 	}
-	w.Write([]byte("test success\n"))
+	if err := manager.ConfigTest(string(body)); err != nil {
+		sendError(w, err)
+		return
+	}
+	sendJSON(w, "success", "测试成功完成")
 }

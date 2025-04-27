@@ -208,11 +208,11 @@ func QueryProxySettings() (*ProxyConfig, error) {
 func getNetworkServices() ([]string, error) {
 	output, err := exec.Command("networksetup", "-listnetworkserviceorder").Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute networksetup command: %w", err)
+		return nil, fmt.Errorf("无法执行 networksetup 命令: %s", err)
 	}
 
 	if len(output) == 0 {
-		return nil, fmt.Errorf("no output from networksetup command")
+		return nil, fmt.Errorf("networksetup 命令没有输出")
 	}
 
 	var services []string
@@ -235,7 +235,7 @@ func getNetworkServices() ([]string, error) {
 	}
 
 	if len(services) == 0 {
-		return nil, fmt.Errorf("no network services found")
+		return nil, fmt.Errorf("未找到网络服务")
 	}
 
 	return services, nil
@@ -250,7 +250,7 @@ func execNetworksetupConcurrent(service string, commands [][]string) error {
 		go func(args []string) {
 			defer wg.Done()
 			if err := exec.Command("networksetup", args...).Run(); err != nil {
-				errChan <- fmt.Errorf("error executing networksetup %v for service %s: %w", args, service, err)
+				errChan <- fmt.Errorf("执行 networksetup %v 时出错，服务 %s: %w", args, service, err)
 			}
 		}(append([]string{cmd[0]}, append([]string{service}, cmd[1:]...)...))
 	}

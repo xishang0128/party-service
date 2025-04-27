@@ -32,3 +32,4 @@ test/config/cache*
 
 *.db
 *.sock
+config.yaml
