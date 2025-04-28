@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -27,8 +28,14 @@ func start() error {
 	// if err := startServer("./party-service.sock", StartUnix); err != nil {
 	// 	return err
 	// }
-	if err := startServer("127.0.0.1:10010", StartHTTP); err != nil {
-		return err
+	if runtime.GOOS == "windows" {
+		if err := startServer("127.0.0.1:10001", StartHTTP); err != nil {
+			return err
+		}
+	} else {
+		if err := startServer("127.0.0.1:10010", StartHTTP); err != nil {
+			return err
+		}
 	}
 	// } else {
 	// 	if err := startServer("/tmp/sparkle-service.sock", StartUnix); err != nil {

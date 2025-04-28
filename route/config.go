@@ -47,7 +47,7 @@ func updateConfig(w http.ResponseWriter, r *http.Request) {
 		Value string `json:"value"`
 	}
 	if err := render.DecodeJSON(r.Body, &cfg); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		sendError(w, err)
 		return
 	}
 

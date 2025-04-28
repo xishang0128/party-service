@@ -33,3 +33,4 @@ test/config/cache*
 *.db
 *.sock
 config.yaml
+sparkle-config.yaml

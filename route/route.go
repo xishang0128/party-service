@@ -20,7 +20,7 @@ func router() *chi.Mux {
 		r.Use(auth())
 		r.Get("/", hello)
 		r.Mount("/config", configRouter())
-		r.Mount("/http_proxy", httpProxyRouter())
+		r.Mount("/sysproxy", httpProxyRouter())
 		r.Mount("/core", coreManager())
 	})
 	return r

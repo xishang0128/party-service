@@ -6,56 +6,71 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"strings"
 	"syscall"
 )
 
-type Environment struct {
-	desktop     string
-	isKde       bool
-	isKde6      bool
-	isGnome     bool
-	initialized bool
+type Session struct {
+	uid      uint32
+	gid      uint32
+	dbusAddr string
+	homeDir  string
 }
 
-func (e *Environment) Init() error {
-	if e.initialized {
+var currentSession *Session
+
+func initSession(uid uint32) error {
+	if currentSession != nil {
 		return nil
 	}
 
-	desktop := os.Getenv("XDG_CURRENT_DESKTOP")
-	if desktop == "" {
-		return fmt.Errorf("XDG_CURRENT_DESKTOP environment variable not set")
+	currentSession = &Session{
+		uid: uid,
+		gid: uid,
 	}
 
-	e.desktop = desktop
-	e.isKde = desktop == "KDE"
-	e.isKde6 = e.isKde && os.Getenv("KDE_SESSION_VERSION") == "6"
-	e.isGnome = desktop == "GNOME"
-	e.initialized = true
+	u, err := user.LookupId(fmt.Sprint(uid))
+	if err != nil {
+		return fmt.Errorf("failed to lookup user: %v", err)
+	}
+	currentSession.homeDir = u.HomeDir
+
+	userRuntime := fmt.Sprintf("/run/user/%d", currentSession.uid)
+	if _, err := os.Stat(userRuntime); err != nil {
+		return fmt.Errorf("user runtime directory not found: %v", err)
+	}
+	currentSession.dbusAddr = fmt.Sprintf("unix:path=%s/bus", userRuntime)
 
 	return nil
 }
 
-func DisableProxy() error {
-	e := &Environment{}
-	if err := e.Init(); err != nil {
+func DisableProxy(desktop string, uid uint32) error {
+	if err := initSession(uid); err != nil {
 		return err
 	}
 
-	switch {
-	case e.isKde:
-		return clearKDEProxy(e.isKde6)
-	case e.isGnome:
+	switch desktop {
+	case "kde":
+		return clearKDEProxy(false)
+	case "kde5":
+		return clearKDEProxy(false)
+	case "kde6":
+		return clearKDEProxy(true)
+	case "gnome":
 		return clearGnomeProxy()
 	default:
-		return fmt.Errorf("不支持的桌面：%s", e.desktop)
+		return fmt.Errorf("不支持的桌面：%s", desktop)
 	}
 }
 
-func SetProxy(proxy, bypass string) error {
+func SetProxy(proxy, bypass, desktop string, uid uint32) error {
+	if err := initSession(uid); err != nil {
+		return err
+	}
+
 	if proxy == "" || bypass == "" {
-		config, err := QueryProxySettings()
+		config, err := QueryProxySettings(desktop, uid)
 		if err != nil {
 			return err
 		}
@@ -66,10 +81,6 @@ func SetProxy(proxy, bypass string) error {
 		if bypass == "" {
 			bypass = config.Proxy.Bypass
 		}
-	}
-	e := &Environment{}
-	if err := e.Init(); err != nil {
-		return err
 	}
 
 	config := &ProxyConfig{}
@@ -82,24 +93,27 @@ func SetProxy(proxy, bypass string) error {
 	}
 	config.Proxy.Bypass = bypass
 
-	switch {
-	case e.isKde:
-		return setKDEProxy(config, e.isKde6)
-	case e.isGnome:
+	switch desktop {
+	case "kde":
+		return setKDEProxy(config, false)
+	case "kde5":
+		return setKDEProxy(config, false)
+	case "kde6":
+		return setKDEProxy(config, true)
+	case "gnome":
 		return setGnomeProxy(config)
 	default:
-		return fmt.Errorf("不支持的桌面：%s", e.desktop)
+		return fmt.Errorf("不支持的桌面：%s", desktop)
 	}
 }
 
-func SetPac(pacUrl string) error {
-	e := &Environment{}
-	if err := e.Init(); err != nil {
+func SetPac(pacUrl, desktop string, uid uint32) error {
+	if err := initSession(uid); err != nil {
 		return err
 	}
 
 	if pacUrl == "" {
-		currentConfig, err := QueryProxySettings()
+		currentConfig, err := QueryProxySettings(desktop, uid)
 		if err != nil {
 			return err
 		}
@@ -110,43 +124,53 @@ func SetPac(pacUrl string) error {
 	config.PAC.Enable = true
 	config.PAC.URL = pacUrl
 
-	switch {
-	case e.isKde:
-		return setKDEPac(config, e.isKde6)
-	case e.isGnome:
+	switch desktop {
+
+	case "kde":
+		return setKDEPac(config, false)
+	case "kde5":
+		return setKDEPac(config, false)
+	case "kde6":
+		return setKDEPac(config, true)
+	case "gnome":
 		return setGnomePac(config)
 	default:
-		return fmt.Errorf("不支持的桌面：%s", e.desktop)
+		return fmt.Errorf("不支持的桌面：%s", desktop)
 	}
 }
 
-func QueryProxySettings() (*ProxyConfig, error) {
-	e := &Environment{}
-	if err := e.Init(); err != nil {
+func QueryProxySettings(desktop string, uid uint32) (*ProxyConfig, error) {
+	if err := initSession(uid); err != nil {
 		return nil, err
 	}
 
-	switch {
-	case e.isKde:
-		return queryKDESettings(e.isKde6)
-	case e.isGnome:
+	switch desktop {
+	case "kde":
+		return queryKDESettings(false)
+	case "kde5":
+		return queryKDESettings(false)
+	case "kde6":
+		return queryKDESettings(true)
+	case "gnome":
 		return queryGnomeSettings()
 	default:
-		return nil, fmt.Errorf("不支持的桌面：%s", e.desktop)
+		return nil, fmt.Errorf("不支持的桌面：%s", desktop)
 	}
 }
 
 func execAsCurrentUser(name string, arg ...string) *exec.Cmd {
 	cmd := exec.Command(name, arg...)
-	if os.Geteuid() == 0 {
-		fmt.Println(os.Getuid(), os.Getgid())
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Credential: &syscall.Credential{
-				Uid: uint32(os.Getuid()),
-				Gid: uint32(os.Getgid()),
-			},
-		}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Credential: &syscall.Credential{
+			Uid: currentSession.uid,
+			Gid: currentSession.gid,
+		},
 	}
+	cmd.Env = append(cmd.Env,
+		fmt.Sprintf("DBUS_SESSION_BUS_ADDRESS=%s", currentSession.dbusAddr),
+		fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", currentSession.uid),
+		fmt.Sprintf("XDG_CONFIG_HOME=%s/.config", currentSession.homeDir),
+	)
 	return cmd
 }
 
@@ -215,7 +239,6 @@ func setGnomeProxy(config *ProxyConfig) error {
 	}
 
 	for proxyType, addr := range proxyTypes {
-		fmt.Println(proxyType, addr)
 		if addr.host != "" {
 			if err := execGsettings(fmt.Sprintf("org.gnome.system.proxy.%s", proxyType), "host", addr.host); err != nil {
 				return err

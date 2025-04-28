@@ -5,6 +5,11 @@ import (
 	"net/http"
 )
 
+type Response struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
 func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r)

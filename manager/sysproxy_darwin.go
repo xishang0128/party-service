@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-func DisableProxy() error {
+func DisableProxy(_ string, _ uint32) error {
 	services, err := getNetworkServices()
 	if err != nil {
 		return err
@@ -49,9 +49,9 @@ func DisableProxy() error {
 	return nil
 }
 
-func SetProxy(proxy, bypass string) error {
+func SetProxy(proxy, bypass, _ string, _ uint32) error {
 	if proxy == "" || bypass == "" {
-		config, err := QueryProxySettings()
+		config, err := QueryProxySettings("", 0)
 		if err != nil {
 			return err
 		}
@@ -109,9 +109,9 @@ func SetProxy(proxy, bypass string) error {
 	return nil
 }
 
-func SetPac(pacUrl string) error {
+func SetPac(pacUrl, _ string, _ uint32) error {
 	if pacUrl == "" {
-		config, err := QueryProxySettings()
+		config, err := QueryProxySettings("", 0)
 		if err != nil {
 			return err
 		}
@@ -158,7 +158,7 @@ func SetPac(pacUrl string) error {
 	return nil
 }
 
-func QueryProxySettings() (*ProxyConfig, error) {
+func QueryProxySettings(_ string, _ uint32) (*ProxyConfig, error) {
 	services, err := getNetworkServices()
 	if err != nil {
 		return nil, err

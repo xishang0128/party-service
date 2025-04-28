@@ -15,11 +15,6 @@ var (
 	isInit atomic.Bool
 )
 
-type Response struct {
-	Status  string `json:"status"`
-	Message string `json:"message"`
-}
-
 func coreManager() http.Handler {
 	if !isInit.Load() {
 		cm = manager.NewCoreManager()
