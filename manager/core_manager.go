@@ -3,13 +3,9 @@ package manager
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
-	"net"
-	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,7 +19,6 @@ import (
 	"github.com/shirou/gopsutil/v4/process"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -88,7 +83,7 @@ func (cm *CoreManager) startProcess() error {
 		configPath = config.GetConfigPath()
 	}
 
-	if err := ConfigTest(configPath); err != nil {
+	if err := ConfigCheck(configPath); err != nil {
 		cm.isRunning.Store(false)
 		return fmt.Errorf("配置测试失败: %w", err)
 	}
@@ -459,181 +454,4 @@ func (cm *CoreManager) killProcessUnix(processName string) error {
 	cm.isRunning.Store(false)
 	log.Printf("成功终止进程 %s", processName)
 	return nil
-}
-
-// ConfigTest 测试配置
-func ConfigTest(path string) error {
-	port, conf, err := parseConfig(path)
-	if err != nil {
-		return fmt.Errorf("配置解析失败: %v", err)
-	}
-
-	tmpPath := config.GetWorkDir() + "/tmp"
-	err = os.MkdirAll(tmpPath, 0755)
-	if err != nil {
-		return fmt.Errorf("创建临时目录失败: %v", err)
-	}
-	err = copyDir(config.GetWorkDir(), tmpPath)
-	if err != nil {
-		return fmt.Errorf("复制工作目录失败: %v", err)
-	}
-	defer os.RemoveAll(tmpPath)
-
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command(
-			config.GetCoreDir()+"/"+config.GetCoreName()+".exe",
-			"-d", tmpPath,
-			"--config", base64.StdEncoding.EncodeToString(conf),
-		)
-	} else {
-		cmd = exec.Command(
-			config.GetCoreDir()+"/"+config.GetCoreName(),
-			"-d", tmpPath,
-			"--config", base64.StdEncoding.EncodeToString(conf),
-		)
-	}
-	defer func() {
-		if cmd != nil && cmd.Process != nil {
-			cmd.Process.Kill()
-			cmd.Wait()
-		}
-		os.RemoveAll(tmpPath)
-	}()
-
-	var outBuffer bytes.Buffer
-	cmd.Stdout = &outBuffer
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("启动核心进程失败: %v", err)
-	}
-	defer cmd.Process.Kill()
-
-	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
-	defer cancel()
-
-	ticker := time.NewTicker(checkInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			output := outBuffer.String()
-			if strings.Contains(output, successIndicator) {
-				proxyURL, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
-				if err != nil {
-					return fmt.Errorf("代理地址解析失败: %v", err)
-				}
-				client := &http.Client{
-					Transport: &http.Transport{
-						Proxy: http.ProxyURL(proxyURL),
-					},
-					CheckRedirect: func(req *http.Request, via []*http.Request) error {
-						return http.ErrUseLastResponse
-					},
-				}
-				client.Get("http://1.1.1.1")
-				if strings.Contains(outBuffer.String(), "1.1.1.1:80") {
-					return nil
-				}
-				return fmt.Errorf("测试失败")
-			}
-
-			if strings.Contains(output, fatalIndicator) {
-				if msgStart := strings.Index(output, "level=fatal msg="); msgStart != -1 {
-					return fmt.Errorf("配置错误: %s", output[msgStart+16:])
-				}
-				return fmt.Errorf("发生致命错误")
-			}
-
-		case <-ctx.Done():
-			return fmt.Errorf("配置测试超时")
-		}
-	}
-}
-
-func parseConfig(path string) (int, []byte, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0, nil, fmt.Errorf("读取配置文件失败: %v", err)
-	}
-
-	var conf map[string]any
-	if err := yaml.Unmarshal(data, &conf); err != nil {
-		return 0, nil, fmt.Errorf("解析配置文件失败: %v", err)
-	}
-
-	if tun, ok := conf["tun"].(map[string]any); ok {
-		tun["enable"] = false
-	}
-
-	port := findAvailablePort()
-	listeners := getListeners(conf)
-	listeners = append(listeners, map[string]any{
-		"type":   "mixed",
-		"port":   port,
-		"listen": "127.0.0.1",
-	})
-	conf["listeners"] = listeners
-	conf["log-level"] = "info"
-
-	config, err := yaml.Marshal(&conf)
-	if err != nil {
-		return 0, nil, fmt.Errorf("序列化配置文件失败: %v", err)
-	}
-	return port, config, nil
-}
-
-func getListeners(conf map[string]any) []any {
-	if listeners, ok := conf["listeners"].([]any); ok {
-		return listeners
-	}
-	return []any{}
-}
-
-func findAvailablePort() int {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		log.Println("未能找到可用端口")
-	}
-	defer listener.Close()
-	return listener.Addr().(*net.TCPAddr).Port
-}
-
-func copyDir(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-
-		targetPath := filepath.Join(dst, relPath)
-
-		if info.IsDir() {
-			return os.MkdirAll(targetPath, info.Mode())
-		}
-
-		return copyFile(path, targetPath)
-	})
-}
-
-func copyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	_, err = io.Copy(destFile, sourceFile)
-	return err
 }

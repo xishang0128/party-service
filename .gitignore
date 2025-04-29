@@ -5,6 +5,7 @@
 *.so
 *.dylib
 bin/*
+sparkle-service
 
 # Test binary, build with `go test -c`
 *.test
@@ -34,3 +35,4 @@ test/config/cache*
 *.sock
 config.yaml
 sparkle-config.yaml
+data.json

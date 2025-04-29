@@ -74,7 +74,7 @@ func coreTest(w http.ResponseWriter, r *http.Request) {
 		sendError(w, err)
 		return
 	}
-	if err := manager.ConfigTest(string(body)); err != nil {
+	if err := manager.ConfigCheck(string(body)); err != nil {
 		sendError(w, err)
 		return
 	}

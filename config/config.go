@@ -103,7 +103,9 @@ func (cm *ConfigManager) getString(value EncryptedString) string {
 
 func (cm *ConfigManager) setString(dest *EncryptedString, value string) error {
 	cm.Lock()
-	*dest = EncryptedString(value)
+	if value != "" {
+		*dest = EncryptedString(value)
+	}
 	cm.Unlock()
 	return cm.save()
 }
@@ -122,6 +124,38 @@ func GetConfig() Config {
 	}
 }
 
+func UpdateConfig(coreName, coreDir, configPath, workDir, logPath, secret, http, namedPipe, unixSocket string) error {
+	if err := manager.setString(&manager.cfg.CoreName, coreName); err != nil {
+		return err
+	}
+	if err := manager.setString(&manager.cfg.CoreDir, coreDir); err != nil {
+		return err
+	}
+	if err := manager.setString(&manager.cfg.ConfigPath, configPath); err != nil {
+		return err
+	}
+	if err := manager.setString(&manager.cfg.WorkDir, workDir); err != nil {
+		return err
+	}
+	if err := manager.setString(&manager.cfg.LogPath, logPath); err != nil {
+		return err
+	}
+	if err := manager.setString(&manager.cfg.Secret, secret); err != nil {
+		return err
+	}
+	if err := manager.setString(&manager.cfg.Http, http); err != nil {
+		return err
+	}
+	if err := manager.setString(&manager.cfg.NamedPipe, namedPipe); err != nil {
+		return err
+	}
+	if err := manager.setString(&manager.cfg.UnixSocket, unixSocket); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func GetCoreName() string   { return manager.getString(manager.cfg.CoreName) }
 func GetCoreDir() string    { return manager.getString(manager.cfg.CoreDir) }
 func GetConfigPath() string { return manager.getString(manager.cfg.ConfigPath) }
@@ -131,16 +165,6 @@ func GetSecret() string     { return manager.getString(manager.cfg.Secret) }
 func GetHttp() string       { return manager.getString(manager.cfg.Http) }
 func GetNamedPipe() string  { return manager.getString(manager.cfg.NamedPipe) }
 func GetUnixSocket() string { return manager.getString(manager.cfg.UnixSocket) }
-
-func SetCoreName(name string) error     { return manager.setString(&manager.cfg.CoreName, name) }
-func SetCorePath(dir string) error      { return manager.setString(&manager.cfg.CoreDir, dir) }
-func SetConfigPath(path string) error   { return manager.setString(&manager.cfg.ConfigPath, path) }
-func SetWorkDir(path string) error      { return manager.setString(&manager.cfg.WorkDir, path) }
-func SetLogPath(path string) error      { return manager.setString(&manager.cfg.LogPath, path) }
-func SetSecret(secret string) error     { return manager.setString(&manager.cfg.Secret, secret) }
-func SetHttp(http string) error         { return manager.setString(&manager.cfg.Http, http) }
-func SetNamedPipe(pipe string) error    { return manager.setString(&manager.cfg.NamedPipe, pipe) }
-func SetUnixSocket(socket string) error { return manager.setString(&manager.cfg.UnixSocket, socket) }
 
 func (es EncryptedString) MarshalYAML() (any, error) {
 	block, err := aes.NewCipher(manager.encryptKey)
